@@ -3,13 +3,9 @@ import numpy as np
 import streamlit as st
 from PIL import Image, ImageDraw
 from matplotlib import pyplot as plt
-import torch 
-import transformers 
-import pickle
-import scipy.spatial as sp
-from transformers import AutoModelForTokenClassification, AutoTokenizer
-from transformers import GeoLMModel, GeoLMTokenizer, GeoLMForTokenClassification
-from utils import sort_ref_closest_match, get_toponym_tokens
+
+from utils import get_toponym_tokens, prepare_bm25
+import torch
 import pdb 
 
 
@@ -34,98 +30,117 @@ st.markdown("### Enter Title and Basemap Description")
 
 
 title = st.text_input('Map title', 'Geologic Map of The Lake Helen Quadrangle, Big Horn and Johnson Counties, Wyoming')
-# st.write('Map title is:', title)
+
 
 basemap_descrip = st.text_input('Basemap Description', 'Base from U.S. Geological Survey, 1967')
-# st.write('Basemap description:', basemap_descrip)
-
-w1 = st.button("Find Base Topo Map") 
-
 
 
 query_sentence = title + ' ' + basemap_descrip 
 # query_sentence = "Geologic Map of The Lake Helen Quadrangle, Big Horn and Johnson Counties, Wyoming. Base from U.S. Geological Survey, 1967"
 
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+@st.cache_data
+def load_data(topo_histo_meta_path, topo_current_meta_path):
+
+    # topo_histo_meta_path = 'support_data/historicaltopo.csv'
+    df_histo = pd.read_csv(topo_histo_meta_path) 
+            
+    # topo_current_meta_path = 'support_data/ustopo_current.csv'
+    df_current = pd.read_csv(topo_current_meta_path) 
 
 
+    common_columns = df_current.columns.intersection(df_histo.columns)
 
-if w1:
-    topo_meta_path = 'support_data/historicaltopo.csv'
-    topo_feat_path = 'support_data/cand_feats_geolm_mean.pkl'
-    df = pd.read_csv(topo_meta_path) 
+    df_merged = pd.concat([df_histo[common_columns], df_current[common_columns]], axis=0)
+            
+    bm25 = prepare_bm25(df_merged)
 
-    with open(topo_feat_path, 'rb') as f: 
-        cand_feat_list = pickle.load(f)
+    return bm25, df_merged
 
-    model = GeoLMModel.from_pretrained("zekun-li/geolm-base-cased")
-
-
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model.to(device)
-    model.eval()
-
-    query_tokens, human_readable_tokens = get_toponym_tokens(query_sentence)
-    print(human_readable_tokens)
+bm25, df_merged = load_data(topo_histo_meta_path = 'support_data/historicaltopo.csv',
+    topo_current_meta_path = 'support_data/ustopo_current.csv')
 
 
-    query_outputs = model(torch.unsqueeze(query_tokens,0))
-    # query_feat = query_outputs['pooler_output'][0].detach().cpu().numpy()
-    query_feat = torch.mean(query_outputs.last_hidden_state[0], axis = 0).detach().cpu().numpy()
+# def click_first_button():
+#     st.session_state.first.clicked = True
+
+# def click_second_button():
+#     st.session_state.second.clicked = True
+
+w1 = st.button("Start Processing")
+
+if st.session_state.get('w1') != True:
+
+    st.session_state['w1'] = w1
 
 
-    sim_matrix = 1 - sp.distance.cdist(np.array(cand_feat_list), np.array([query_feat]), 'cosine')
+if st.session_state['w1'] == True:
 
-    map_rowid_list = range(0, len(cand_feat_list))
-    # closest_match_scanid = sort_ref_closest_match(sim_matrix, map_scanid_list)
-    closest_match_rowid = sort_ref_closest_match(sim_matrix, map_rowid_list)
+    query_tokens, human_readable_tokens = get_toponym_tokens(query_sentence, device)
+    # print(human_readable_tokens)
+
+    st.write('Detected toponyms:', human_readable_tokens)
+
+    query_sent = ' '.join(human_readable_tokens)
+
+    # w2 = st.button("Find Base Topo Map") 
+
+    # if st.session_state.get('w2') != True:
+
+    #     st.session_state['w2'] = w2
+
+    
+    # if st.session_state['w2'] == True:
         
-    sorted_sim_matrix = np.sort(sim_matrix, axis = 0)[::-1] # descending order
 
-    ret_dict = dict()
-    # ret_dict['query_sentence'] = input_sentence
-    ret_dict['closest_match_rowid'] = [a[0] for a in closest_match_rowid]
-    ret_dict['sorted_sim_matrix'] = [a[0] for a in sorted_sim_matrix]
+    tokenized_query = query_sent.split(" ")
 
-    print(ret_dict['closest_match_rowid'][:5])
+    doc_scores = bm25.get_scores(tokenized_query)
 
-    st.table(df.iloc[ret_dict['closest_match_rowid'][:5]])
+    sorted_bm25_list = np.argsort(doc_scores)[::-1]
 
 
-
+    
+    # st.table(df_merged.iloc[sorted_bm25_list[0:10]])
+    st.dataframe(df_merged.iloc[sorted_bm25_list[0:10]])
 
 
 
-    # # it will only detect the English and Turkish part of the image as text
-    # reader = easyocr.Reader(['tr','en'], gpu=False) 
-    # result = reader.readtext(np.array(image))  # turn image to numpy array
-
-    # textdic_easyocr = {} 
-    # for idx in range(len(result)): 
-    #     pred_coor = result[idx][0] 
-    #     pred_text = result[idx][1] 
-    #     pred_confidence = result[idx][2] 
-    #     textdic_easyocr[pred_text] = {} 
-    #     textdic_easyocr[pred_text]['pred_confidence'] = pred_confidence
-
-    # # create a dataframe which shows the predicted text and prediction confidence
-    # df = pd.DataFrame.from_dict(textdic_easyocr).T
-    # st.table(df)
 
 
-    # def rectangle(image, result):
-    #     # https://www.blog.pythonlibrary.org/2021/02/23/drawing-shapes-on-images-with-python-and-pillow/
-    #     """ draw rectangles on image based on predicted coordinates"""
-    #     draw = ImageDraw.Draw(image)
-    #     for res in result:
-    #         top_left = tuple(res[0][0]) # top left coordinates as tuple
-    #         bottom_right = tuple(res[0][2]) # bottom right coordinates as tuple
-    #         draw.rectangle((top_left, bottom_right), outline="blue", width=2)
-    #     #display image on streamlit
-    #     st.image(image)
 
-    # dataframe = pd.DataFrame(
-    #     np.random.randn(10, 20),
-    #     columns=('col %d' % i for i in range(20)))
-    # st.table(dataframe)
+        # # it will only detect the English and Turkish part of the image as text
+        # reader = easyocr.Reader(['tr','en'], gpu=False) 
+        # result = reader.readtext(np.array(image))  # turn image to numpy array
+
+        # textdic_easyocr = {} 
+        # for idx in range(len(result)): 
+        #     pred_coor = result[idx][0] 
+        #     pred_text = result[idx][1] 
+        #     pred_confidence = result[idx][2] 
+        #     textdic_easyocr[pred_text] = {} 
+        #     textdic_easyocr[pred_text]['pred_confidence'] = pred_confidence
+
+        # # create a dataframe which shows the predicted text and prediction confidence
+        # df = pd.DataFrame.from_dict(textdic_easyocr).T
+        # st.table(df)
+
+
+        # def rectangle(image, result):
+        #     # https://www.blog.pythonlibrary.org/2021/02/23/drawing-shapes-on-images-with-python-and-pillow/
+        #     """ draw rectangles on image based on predicted coordinates"""
+        #     draw = ImageDraw.Draw(image)
+        #     for res in result:
+        #         top_left = tuple(res[0][0]) # top left coordinates as tuple
+        #         bottom_right = tuple(res[0][2]) # bottom right coordinates as tuple
+        #         draw.rectangle((top_left, bottom_right), outline="blue", width=2)
+        #     #display image on streamlit
+        #     st.image(image)
+
+        # dataframe = pd.DataFrame(
+        #     np.random.randn(10, 20),
+        #     columns=('col %d' % i for i in range(20)))
+        # st.table(dataframe)
 
 
