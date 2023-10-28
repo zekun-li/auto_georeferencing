@@ -33,33 +33,36 @@ def load_and_resize_image(input_image_path, max_size):
 
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 MODEL_TYPE = "vit_h"
-IMAGE_PATH = '/home/zekunl/Downloads/0004002.jpg'
+
 checkpoint_path = "support_data/sam_vit_h_4b8939.pth"
 img_max_size = 200
 
-
-image, resized_img, scaling_factor = load_and_resize_image(IMAGE_PATH, max_size=img_max_size)
-
-sam = sam_model_registry[MODEL_TYPE](checkpoint=checkpoint_path)
-mask_generator = SamAutomaticMaskGenerator(sam)
-sam_result = mask_generator.generate(resized_img)
+input_image_path = '/home/zekunl/Downloads/0004002.jpg'
 
 
-area_list = []
-index_list = []
-for idx in range(len(sam_result)):
-    re = sam_result[idx]
-    index_list.append(idx)
-    area_list.append(re['area'])
+def run_sam(input_image_path):
+    image, resized_img, scaling_factor = load_and_resize_image(input_image_path, max_size=img_max_size)
 
-# sort the segmentation masks by area
-sorted_area_list = [x for x, y in sorted(zip(area_list, index_list))][::-1]
-sorted_index_list = [y for x, y in sorted(zip(area_list, index_list))][::-1]
-
-diff_area_list = [sorted_area_list[i-1] - sorted_area_list[i] for i in range(1, len(sorted_area_list))]
+    sam = sam_model_registry[MODEL_TYPE](checkpoint=checkpoint_path)
+    mask_generator = SamAutomaticMaskGenerator(sam)
+    sam_result = mask_generator.generate(resized_img)
 
 
-# get the segmentation for map plot area
-map_plot_area = sam_result[sorted_index_list[np.argmax(diff_area_list)]]
-seg_mask = map_plot_area['segmentation']
-bbox = map_plot_area['bbox']
+    area_list = []
+    index_list = []
+    for idx in range(len(sam_result)):
+        re = sam_result[idx]
+        index_list.append(idx)
+        area_list.append(re['area'])
+
+    # sort the segmentation masks by area
+    sorted_area_list = [x for x, y in sorted(zip(area_list, index_list))][::-1]
+    sorted_index_list = [y for x, y in sorted(zip(area_list, index_list))][::-1]
+
+    diff_area_list = [sorted_area_list[i-1] - sorted_area_list[i] for i in range(1, len(sorted_area_list))]
+
+
+    # get the segmentation for map plot area
+    map_plot_area = sam_result[sorted_index_list[np.argmax(diff_area_list)]]
+    seg_mask = map_plot_area['segmentation']
+    bbox = map_plot_area['bbox']

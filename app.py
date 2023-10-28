@@ -29,10 +29,12 @@ st.markdown("### Enter Title and Basemap Description")
 
 
 
-title = st.text_input('Map title', 'Geologic Map of The Lake Helen Quadrangle, Big Horn and Johnson Counties, Wyoming')
+title = st.text_input('Map title', '')
+st.write('Example: Geologic Map of The Lake Helen Quadrangle, Big Horn and Johnson Counties, Wyoming.')
 
 
-basemap_descrip = st.text_input('Basemap Description', 'Base from U.S. Geological Survey, 1967')
+basemap_descrip = st.text_input('Basemap Description', '')
+st.write('Example: Base from U.S. Geological Survey, 1967')
 
 
 query_sentence = title + ' ' + basemap_descrip 
