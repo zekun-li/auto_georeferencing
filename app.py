@@ -3,10 +3,44 @@ import numpy as np
 import streamlit as st
 from PIL import Image, ImageDraw
 from matplotlib import pyplot as plt
-
+import cv2
 from utils import get_toponym_tokens, prepare_bm25
+from segmentation_sam import resize_img, run_sam
 import torch
 import pdb 
+
+
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+
+
+def overlay_mask(input_img, mask_img, transparency):
+
+    mask_img = np.expand_dims(mask_img, -1)
+    zeros = np.zeros_like(mask_img)
+    mask_img = np.concatenate((zeros, mask_img, zeros), axis=-1)
+    combined_img = cv2.addWeighted(input_img,0.6,mask_img,0.4,0)
+
+    return combined_img
+
+@st.cache_data
+def run_segmentation(file):
+    image = Image.open(file) # read image with PIL library
+
+    st.write('Original Image:')
+    st.image(image) #display
+
+    resized_img, scaling_factor = resize_img(np.array(image))
+    seg_mask, bbox = run_sam(np.array(image), resized_img, scaling_factor, device)
+
+
+    overlay_img = overlay_mask(np.array(image), seg_mask, transparency = 0.5)
+
+    st.write('Segmentation Mask:')
+    st.image(overlay_img)
+
+    return seg_mask, bbox
+
 
 
 
@@ -21,8 +55,7 @@ file = st.file_uploader(label = "Upload your map", type=['png', 'jpg', 'jpeg', '
 
 
 if file:
-    image = Image.open(file) # read image with PIL library
-    st.image(image) #display
+    run_segmentation(file)
 
 
 st.markdown("### Enter Title and Basemap Description")
@@ -30,17 +63,19 @@ st.markdown("### Enter Title and Basemap Description")
 
 
 title = st.text_input('Map title', '')
-st.write('Example: Geologic Map of The Lake Helen Quadrangle, Big Horn and Johnson Counties, Wyoming.')
+
+st.write('\t Example: Geologic Map of The Lake Helen Quadrangle, Big Horn and Johnson Counties, Wyoming.')
 
 
 basemap_descrip = st.text_input('Basemap Description', '')
-st.write('Example: Base from U.S. Geological Survey, 1967')
+
+st.write('\t Example: Base from U.S. Geological Survey, 1967')
 
 
 query_sentence = title + ' ' + basemap_descrip 
 # query_sentence = "Geologic Map of The Lake Helen Quadrangle, Big Horn and Johnson Counties, Wyoming. Base from U.S. Geological Survey, 1967"
 
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+st.write('Query: ', query_sentence)
 
 @st.cache_data
 def load_data(topo_histo_meta_path, topo_current_meta_path):
