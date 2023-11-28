@@ -1,0 +1,13 @@
+scipy
+transformers @ git+https://github.com/zekun-li/transformers@geolm
+segment_anything @ git+https://github.com/facebookresearch/segment-anything.git
+torch==2.1.0 
+rank_bm25
+scikit-image
+geopandas
+folium
+rasterio 
+streamlit_folium
+opencv-python
+torchvision
+
